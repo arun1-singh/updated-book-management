@@ -35,7 +35,7 @@ def test_create_valid_book(client):
     response = client.post("/create", json=payload)
     data = response.get_json()
     assert response.status_code == 201
-    assert data["data"]["name"] == "Flask101"
+    assert data["name"] == "Flask101"
 
 @pytest.mark.create_api
 def test_create_missing_field(client):

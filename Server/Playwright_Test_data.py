@@ -19,14 +19,14 @@ cur.execute("""
         publisher TEXT NOT NULL,
         name TEXT NOT NULL,
         date TEXT NOT NULL,
-        Cost REAL NOT NULL
+        cost REAL NOT NULL
     )
 """)
 
 # Insert sample books if they don't already exist
 for book in sample_books:
     cur.execute("""
-        INSERT INTO book (publisher, name, date, Cost)
+        INSERT INTO book (publisher, name, date, cost)
         SELECT ?, ?, ?, ?
         WHERE NOT EXISTS (
             SELECT 1 FROM book WHERE name=? AND publisher=?

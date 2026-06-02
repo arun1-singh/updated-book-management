@@ -28,6 +28,23 @@ def db_connection():
     cursor.close()
     conn.close()
 
+# @pytest.fixture(scope="function")
+# def create_sample_book(db_connection):
+#     """
+#     Fixture to create a sample book for testing update/delete/fetch.
+#     Returns the inserted book id.
+#     """
+#     conn, cursor = db_connection
+#     cursor.execute(
+#         "INSERT INTO book (publisher, name, date, cost) VALUES (?, ?, ?, ?) RETURNING id",
+#         ("TestPub", "TestBook", "2025-01-01", 50.0)
+#     )
+#     book_id = cursor.fetchone()[0]
+#     conn.commit()
+#     yield book_id
+#     cursor.execute("DELETE FROM book WHERE id=%s", (book_id,))
+#     conn.commit()
+
 @pytest.fixture(scope="function")
 def create_sample_book(db_connection):
     """
@@ -35,12 +52,19 @@ def create_sample_book(db_connection):
     Returns the inserted book id.
     """
     conn, cursor = db_connection
+
     cursor.execute(
-        "INSERT INTO book (publisher, name, date, cost) VALUES (%s, %s, %s, %s) RETURNING id",
+        "INSERT INTO book (publisher, name, date, cost) VALUES (?, ?, ?, ?) RETURNING id",
         ("TestPub", "TestBook", "2025-01-01", 50.0)
     )
+
     book_id = cursor.fetchone()[0]
     conn.commit()
+
     yield book_id
-    cursor.execute("DELETE FROM book WHERE id=%s", (book_id,))
+
+    cursor.execute(
+        "DELETE FROM book WHERE id = ?",
+        (book_id,)
+    )
     conn.commit()

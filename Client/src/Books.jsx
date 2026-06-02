@@ -52,7 +52,7 @@ const Books = () => {
                                 <td>{book.publisher}</td>
                                 <td>{book.name}</td>
                                 <td>{book.date}</td>
-                                <td>{book.Cost}</td>
+                                <td>{book.cost}</td>
                                 <td>
                                     <button className="btn btn-primary" onClick={() => handleUpdate(book)}>
                                         Update

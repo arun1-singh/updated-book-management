@@ -1,0 +1,178 @@
+name: Book Management CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Server
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Server/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Initialize SQLite database
+        run: python -c "from app import init_db; init_db()"
+
+      - name: Run Pytest
+        run: python -m pytest tests/pytest -v --json-report --json-report-file=tests/pytest/pytest-report.json
+
+      - name: Upload Pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: Server/tests/pytest/pytest-report.json
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Client
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: Client/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build React app
+        run: npm run build
+
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-dist
+          path: Client/dist
+
+  playwright-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    needs:
+      - backend-tests
+      - frontend-build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Server/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: Server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Initialize SQLite database
+        working-directory: Server
+        run: python -c "from app import init_db; init_db()"
+
+      - name: Seed E2E database
+        working-directory: Server
+        run: python -c "from app import get_db_connection; conn = get_db_connection(); conn.execute('INSERT INTO book (publisher, name, date, cost) VALUES (?, ?, ?, ?)', ('CI Publisher', 'CI Book', '2026-06-01', 99.99)); conn.commit(); conn.close()"
+
+      - name: Start Flask backend
+        working-directory: Server
+        run: python -m flask --app app run --host 127.0.0.1 --port 5001 &
+
+      - name: Wait for backend health check
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5001/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: Client/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: Client
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: Client
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        working-directory: Client
+        run: npx playwright test --workers=1
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: Client/playwright-report
+          retention-days: 30
+
+  package-artifacts:
+    name: Package Artifacts
+    runs-on: ubuntu-latest
+    needs:
+      - backend-tests
+      - frontend-build
+      - playwright-tests
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: react-dist
+          path: release/react-dist
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: book-management-release
+          path: release
+          retention-days: 30
