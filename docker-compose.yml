@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Backend Flask API Service
+  backend:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: book-management-backend
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      - BOOKS_DB_PATH=/app/data/books.db
+    volumes:
+      # Persist database data
+      - backend_data:/app/data
+    networks:
+      - book-management-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Frontend React Service
+  frontend:
+    build:
+      context: ./Client
+      dockerfile: Dockerfile
+    container_name: book-management-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=production
+      - VITE_BACKEND_URL=http://localhost:5001
+    depends_on:
+      - backend
+    networks:
+      - book-management-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+networks:
+  book-management-network:
+    driver: bridge
+
+volumes:
+  backend_data:
+    driver: local

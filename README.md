@@ -376,7 +376,9 @@ or something similar from Npcap.
 6. Use this display filter:
 
 ```text
+
 http and tcp.port == 5001 and (http.request.method or http.response.code or json)
+
 ```
 
 7. In the React app, create, update, delete, or refresh books.
@@ -649,6 +651,74 @@ cd Server
 bash generate-unified-report.sh
 ```
 
+## Running with Docker (Recommended for Deployment)
+
+Docker allows you to containerize the entire application and run it consistently across different machines.
+
+### Quick Start with Docker Compose
+
+Prerequisites:
+- Docker and Docker Compose installed
+
+From the project root:
+
+```bash
+docker compose up
+```
+
+The application will be available at:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:5001`
+
+**Useful Docker Compose commands:**
+
+```bash
+docker compose up -d          # Run in background
+docker compose down           # Stop services
+docker compose logs           # View logs
+docker compose up --build     # Rebuild images (after code changes)
+```
+
+### Building and Pushing to Docker Hub
+
+To share your images on Docker Hub:
+
+1. **Login to Docker Hub:**
+   ```bash
+   docker login
+   ```
+
+2. **Build images with Docker Hub naming:**
+   ```bash
+   docker build -t your-username/book-management-backend:1.0 ./Server
+   docker build -t your-username/book-management-frontend:1.0 ./Client
+   ```
+
+3. **Push to Docker Hub:**
+   ```bash
+   docker push your-username/book-management-backend:1.0
+   docker push your-username/book-management-frontend:1.0
+   ```
+
+### Running from Docker Hub Images
+
+Others can run your application by updating the `docker-compose.yml` to use your pushed images:
+
+```yaml
+services:
+  backend:
+    image: your-username/book-management-backend:1.0
+  frontend:
+    image: your-username/book-management-frontend:1.0
+```
+
+Then run:
+```bash
+docker compose up
+```
+
+For comprehensive Docker setup instructions, environment variables, troubleshooting, and production deployment guidelines, see [DOCKER_INSTRUCTIONS.md](DOCKER_INSTRUCTIONS.md).
+
 ## Technologies Used
 
 ### Backend
@@ -672,6 +742,11 @@ bash generate-unified-report.sh
 - **Wireshark**: Network traffic inspection on Windows
 - **tcpdump**: Network traffic inspection on Linux
 - **DB Browser for SQLite**: Database inspection
+
+### Containerization
+
+- **Docker**: Container platform for building and running the app
+- **Docker Compose**: Multi-container orchestration
 
 ## Troubleshooting
 

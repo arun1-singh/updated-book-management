@@ -1,9 +1,10 @@
+from dotenv import load_dotenv
+load_dotenv()
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime
-import sqlite3
+import pyodbc
 import os
-import tempfile
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import (
     JWTManager, create_access_token, jwt_required, get_jwt_identity
@@ -16,40 +17,63 @@ CORS(app)
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-key-change-me')
 jwt = JWTManager(app)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'books.db')
+# MSSQL connection configuration — set these via environment variables
+MSSQL_SERVER   = os.environ.get('MSSQL_SERVER', 'localhost')
+MSSQL_DATABASE = os.environ.get('MSSQL_DATABASE', 'books_db')
+MSSQL_USERNAME = os.environ.get('MSSQL_USERNAME', 'sa')
+MSSQL_PASSWORD = os.environ.get('MSSQL_PASSWORD', 'YourStrong@Pass123')
+MSSQL_DRIVER   = os.environ.get('MSSQL_DRIVER', 'ODBC Driver 17 for SQL Server')
 
-def get_db_path():
+# For test environments, allow overriding the database name
+def get_db_name():
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        return os.path.join(tempfile.gettempdir(), "simple_book_management_test_books.db")
-    return os.environ.get("BOOKS_DB_PATH", DB_PATH)
+        return os.environ.get("MSSQL_TEST_DATABASE", "books_db_test")
+    return MSSQL_DATABASE
+
+def get_connection_string():
+    return (
+        f"DRIVER={{{MSSQL_DRIVER}}};"
+        f"SERVER={MSSQL_SERVER};"
+        f"DATABASE={get_db_name()};"
+        f"UID={MSSQL_USERNAME};"
+        f"PWD={MSSQL_PASSWORD};"
+        "TrustServerCertificate=yes;"
+    )
+
+def get_db_connection():
+    connection = pyodbc.connect(get_connection_string())
+    return connection
 
 def ensure_schema(connection):
     cursor = connection.cursor()
-    cursor.executescript('''
-        CREATE TABLE IF NOT EXISTS book (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            publisher TEXT NOT NULL,
-            name TEXT NOT NULL,
-            date TEXT NOT NULL,
-            cost REAL NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
-        );
-    ''')
+    cursor.execute("""
+        IF NOT EXISTS (
+            SELECT * FROM sysobjects WHERE name='book' AND xtype='U'
+        )
+        CREATE TABLE book (
+            id        INT IDENTITY(1,1) PRIMARY KEY,
+            publisher NVARCHAR(255) NOT NULL,
+            name      NVARCHAR(255) NOT NULL,
+            date      NVARCHAR(20)  NOT NULL,
+            cost      FLOAT         NOT NULL
+        )
+    """)
+    cursor.execute("""
+        IF NOT EXISTS (
+            SELECT * FROM sysobjects WHERE name='users' AND xtype='U'
+        )
+        CREATE TABLE users (
+            id            INT IDENTITY(1,1) PRIMARY KEY,
+            username      NVARCHAR(150) UNIQUE NOT NULL,
+            password_hash NVARCHAR(256) NOT NULL
+        )
+    """)
     connection.commit()
     cursor.close()
 
-def get_db_connection():
-    connection = sqlite3.connect(get_db_path(), timeout=10)
-    connection.row_factory = sqlite3.Row
-    ensure_schema(connection)
-    return connection
-
 def init_db():
     connection = get_db_connection()
+    ensure_schema(connection)
     connection.close()
 
 def validate_book_payload(payload):
@@ -78,112 +102,82 @@ def validate_book_payload(payload):
 
     return None
 
+
+# ──────────────────────────────────────────────
+# Auth endpoints
+# ──────────────────────────────────────────────
+
 @app.route('/signup', methods=['POST'])
 def signup():
-
     data = request.get_json(silent=True) or {}
-
     username = data.get('username')
     password = data.get('password')
 
     if not username or not password:
-        return jsonify({
-            "error": "username and password required"
-        }), 400
+        return jsonify({"error": "username and password required"}), 400
 
     connection = get_db_connection()
     cursor = connection.cursor()
 
-    # Check if username already exists
-    cursor.execute(
-        "SELECT id FROM users WHERE username = ?",
-        (username,)
-    )
-
+    cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
     existing_user = cursor.fetchone()
 
     if existing_user:
         cursor.close()
         connection.close()
+        return jsonify({"error": "Username already exists"}), 409
 
-        return jsonify({
-            "error": "Username already exists"
-        }), 409
-
-    # Hash password
     password_hash = generate_password_hash(password)
-
-    # Insert user
     cursor.execute(
-        """
-        INSERT INTO users (username, password_hash)
-        VALUES (?, ?)
-        """,
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
         (username, password_hash)
     )
-
     connection.commit()
 
-    user_id = cursor.lastrowid
+    # Retrieve the new user's ID
+    cursor.execute("SELECT @@IDENTITY AS id")
+    user_id = int(cursor.fetchone()[0])
 
     cursor.close()
     connection.close()
 
-    return jsonify({
-        "message": "User created successfully",
-        "user_id": user_id
-    }), 201
+    return jsonify({"message": "User created successfully", "user_id": user_id}), 201
+
 
 @app.route('/login', methods=['POST'])
 def login():
-
     data = request.get_json(silent=True) or {}
-
     username = data.get('username')
     password = data.get('password')
 
     if not username or not password:
-        return jsonify({
-            "error": "username and password required"
-        }), 400
+        return jsonify({"error": "username and password required"}), 400
 
     connection = get_db_connection()
     cursor = connection.cursor()
 
     cursor.execute(
-        """
-        SELECT id, password_hash
-        FROM users
-        WHERE username = ?
-        """,
+        "SELECT id, password_hash FROM users WHERE username = ?",
         (username,)
     )
-
     user = cursor.fetchone()
 
     cursor.close()
     connection.close()
 
     if not user:
-        return jsonify({
-            "error": "Bad credentials"
-        }), 401
+        return jsonify({"error": "Bad credentials"}), 401
 
-    if not check_password_hash(
-        user["password_hash"],
-        password
-    ):
-        return jsonify({
-            "error": "Bad credentials"
-        }), 401
+    if not check_password_hash(user[1], password):
+        return jsonify({"error": "Bad credentials"}), 401
 
-    access_token = create_access_token(
-        identity=str(user["id"])
-    )
+    access_token = create_access_token(identity=str(user[0]))
+    return jsonify({"access_token": access_token}), 200
 
-    return jsonify({
-        "access_token": access_token
-    }), 200
+
+# ──────────────────────────────────────────────
+# Book endpoints
+# ──────────────────────────────────────────────
 
 @app.route('/', methods=['GET'])
 def get_books():
@@ -195,14 +189,15 @@ def get_books():
     connection.close()
     return jsonify([
         {
-            "id": row[0],
+            "id":        row[0],
             "publisher": row[1],
-            "name": row[2],
-            "date": row[3],
-            "cost": row[4],
+            "name":      row[2],
+            "date":      row[3],
+            "cost":      row[4],
         }
         for row in rows
     ])
+
 
 @app.route('/create', methods=['POST'])
 @jwt_required()
@@ -216,12 +211,13 @@ def create_books():
     cursor = connection.cursor()
     cursor.execute(
         "INSERT INTO book (publisher, name, date, cost) VALUES (?, ?, ?, ?)",
-        (new_book['publisher'], new_book['name'], new_book['date'], new_book['cost'])
+        (new_book['publisher'], new_book['name'], new_book['date'], float(new_book['cost']))
     )
     connection.commit()
     cursor.close()
     connection.close()
     return jsonify(new_book), 201
+
 
 @app.route('/update/<int:id>', methods=['PUT'])
 @jwt_required()
@@ -235,17 +231,19 @@ def update_book(id):
     cursor = connection.cursor()
     cursor.execute(
         "UPDATE book SET publisher=?, name=?, date=?, cost=? WHERE id=?",
-        (updated_book['publisher'], updated_book['name'], updated_book['date'], updated_book['cost'], id)
+        (updated_book['publisher'], updated_book['name'], updated_book['date'],
+         float(updated_book['cost']), id)
     )
-    if cursor.rowcount == 0:
-        cursor.close()
-        connection.close()
-        return jsonify({"error": "Book not found"}), 404
-
+    rows_affected = cursor.rowcount
     connection.commit()
     cursor.close()
     connection.close()
+
+    if rows_affected == 0:
+        return jsonify({"error": "Book not found"}), 404
+
     return jsonify({"data": updated_book})
+
 
 @app.route('/delete/<int:id>', methods=['DELETE'])
 @jwt_required()
@@ -253,15 +251,16 @@ def delete_book(id):
     connection = get_db_connection()
     cursor = connection.cursor()
     cursor.execute("DELETE FROM book WHERE id=?", (id,))
-    if cursor.rowcount == 0:
-        cursor.close()
-        connection.close()
-        return jsonify({"error": "Book not found"}), 404
-
+    rows_affected = cursor.rowcount
     connection.commit()
     cursor.close()
     connection.close()
+
+    if rows_affected == 0:
+        return jsonify({"error": "Book not found"}), 404
+
     return jsonify({'message': 'Book deleted successfully'})
+
 
 @app.route("/health")
 def health():
@@ -275,6 +274,7 @@ def not_found(error):
 @app.errorhandler(405)
 def method_not_allowed(error):
     return jsonify({"error": "Method not allowed"}), 405
+
 
 if __name__ == '__main__':
     init_db()
