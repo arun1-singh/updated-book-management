@@ -402,6 +402,7 @@ jobs:
         working-directory: Client
         env:
           BASE_URL: http://localhost:5173
+          PLAYWRIGHT_BASE_URL: http://localhost:5173
         run: npx playwright test --workers=1
 
       - uses: actions/upload-artifact@v4

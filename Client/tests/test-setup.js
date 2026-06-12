@@ -14,9 +14,13 @@ export const test = baseTest.extend({
     });
     const page = await context.newPage();
 
-    // Navigate to the app before each test. Use PLAYWRIGHT_BASE_URL if provided
-    // (set by the runner) or fall back to a likely Vite port.
-    const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5176';
+    // Navigate to the app before each test.
+    // Reads BASE_URL (set in playwright.config.js and CI workflow) with a
+    // sensible fallback. PLAYWRIGHT_BASE_URL is kept as an alias for compat.
+    const baseUrl =
+      process.env.BASE_URL ||
+      process.env.PLAYWRIGHT_BASE_URL ||
+      'http://localhost:5173';
     await page.goto(baseUrl);
     
     await use(page);
