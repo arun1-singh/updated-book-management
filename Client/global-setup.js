@@ -20,7 +20,7 @@ async function globalSetup() {
     throw new Error(`Login failed: ${loginRes.status()} ${await loginRes.text()}`);
   }
   const { access_token } = await loginRes.json();
-  await apiCtx.dispose();
+  await apiCtx.close();
 
   // ── 3. Open a real page, set localStorage, then capture storage state ──────
   // We must navigate to the app first so localStorage is scoped to the origin.
