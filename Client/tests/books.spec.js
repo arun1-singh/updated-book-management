@@ -79,7 +79,6 @@ test.describe('Books List Page', () => {
   });
 
   test('should handle delete button click', async ({ page }) => {
-    // Do NOT reload — let test-setup's localStorage token stay intact
     await page.waitForSelector('table.table tbody tr, td:has-text("No records")', { timeout: 5000 });
 
     const noRecords = page.locator('td:has-text("No records")');
@@ -94,8 +93,8 @@ test.describe('Books List Page', () => {
     if (await deleteButtons.first().isVisible({ timeout: 3000 })) {
       const rowsBefore = await rows.count();
       await deleteButtons.first().click();
-      // The UI removes the row optimistically — wait for DOM update
-      await expect(rows).toHaveCount(rowsBefore - 1, { timeout: 10000 });
+      // Wait for backend-confirmed deletion — row disappears from DOM
+      await expect(rows).toHaveCount(rowsBefore - 1, { timeout: 15000 });
     }
   });
 });

@@ -12,17 +12,13 @@ const Books = () => {
     };
 
     const handleDelete = (bookId) => {
-        // Optimistically remove locally so tests observe the change immediately
-        setBooks(prev => {
-            const next = prev.filter(book => String(book.id) !== String(bookId));
-            try { localStorage.setItem('test_books', JSON.stringify(next)); } catch (e) {}
-            return next;
-        });
-
         axios.delete(`http://localhost:5001/delete/${bookId}`)
+            .then(() => {
+                // Remove from state only after backend confirms deletion
+                setBooks(prev => prev.filter(book => String(book.id) !== String(bookId)));
+            })
             .catch(err => {
-                // If backend delete fails, log but keep local state updated for tests
-                console.log('Delete backend failed (ignored):', err);
+                console.error('Delete failed:', err);
             });
     };
 
@@ -30,30 +26,13 @@ const Books = () => {
         axios.get('http://localhost:5001')
             .then(res => {
                 if (Array.isArray(res.data)) {
-                    if (res.data.length > 0) {
-                        setBooks(res.data);
-                        try { localStorage.setItem('test_books', JSON.stringify(res.data)); } catch (e) {}
-                    } else {
-                        try {
-                            const stored = JSON.parse(localStorage.getItem('test_books') || '[]');
-                            setBooks(Array.isArray(stored) && stored.length > 0 ? stored : []);
-                        } catch (e) {
-                            setBooks([]);
-                        }
-                    }
+                    setBooks(res.data);
                 } else {
                     console.error('Expected an array but got:', res.data);
                 }
             })
             .catch(err => {
-                // Fallback to localStorage when backend isn't available
-                console.log('Backend fetch failed, loading books from localStorage', err);
-                try {
-                    const stored = JSON.parse(localStorage.getItem('test_books') || '[]');
-                    setBooks(Array.isArray(stored) ? stored : []);
-                } catch (e) {
-                    setBooks([]);
-                }
+                console.error('Backend fetch failed:', err);
             });
     }, []);
 

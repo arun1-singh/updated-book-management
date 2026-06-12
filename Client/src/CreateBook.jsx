@@ -13,20 +13,10 @@ const CreateBook = () => { // defined the functional component named createbook
     const handleSubmit= (e) =>{    // event handler to handle form submission
         e.preventDefault()        // prevent default form submission
 
-        // Immediately persist to localStorage so tests can verify creation
-        const testBook = { ...values, id: `local-${Date.now()}` };
-        try {
-            const stored = JSON.parse(localStorage.getItem('test_books') || '[]');
-            stored.unshift(testBook);
-            localStorage.setItem('test_books', JSON.stringify(stored));
-        } catch (e) {}
-
-        // Fire the backend call but navigate immediately so tests see the redirect
         axios.post('http://localhost:5001/create', values)
         .then(res => navigate('/'))
         .catch(err => {
             console.error('CreateBook POST failed:', err);
-            navigate('/');
         });
     }
     return ( // div container contain flexbox classes to centring content
