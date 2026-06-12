@@ -1,835 +1,486 @@
-# Flask CRUD App with SQLite and React
+# Book Management System — Flask + React + SQL Server
 
-## Description
+A full-stack CRUD application for managing books, using Microsoft SQL Server as the database.
 
-This is a simple full-stack **Book Management CRUD application**.
-
-It has:
-
-- A **React frontend** for the browser UI
-- A **Flask backend** for REST API endpoints
-- A **SQLite database** for storing book records
-
-The app allows users to:
-
-- View all books
-- Add a new book
-- Update an existing book
-- Delete a book
-
-CRUD means:
-
-| Operation | Meaning |
+| Layer | Technology |
 |---|---|
-| Create | Add a new record |
-| Read | View records |
-| Update | Edit an existing record |
-| Delete | Remove a record |
+| Frontend | React 18, Vite, Bootstrap, Axios |
+| Backend | Flask 3, Flask-JWT-Extended, Flask-CORS, pyodbc |
+| Database | Microsoft SQL Server 2019 |
+| Backend tests | Pytest |
+| Frontend tests | Playwright |
+| API tests | Postman / Newman |
+| CI/CD | GitHub Actions (real MSSQL container) |
+| Containerisation | Docker, Docker Compose |
 
-## Project Structure
-
-```text
-simple_book_management_may_2026/
-|-- Client/                         # React frontend
-|   |-- public/
-|   |-- src/
-|   |   |-- App.jsx
-|   |   |-- Books.jsx
-|   |   |-- CreateBook.jsx
-|   |   |-- UpdateBook.jsx
-|   |   |-- Nav.jsx
-|   |   |-- main.jsx
-|   |-- package.json
-|   |-- vite.config.js
-|   |-- playwright.config.js
-|
-|-- Server/                         # Flask + SQLite backend
-|   |-- app.py
-|   |-- books.db                    # SQLite database file, created after running app
-|   |-- requirements.txt
-|   |-- setup_database.sql
-|   |-- run-pytest.sh
-|   |-- tests/
-|
-|-- README.md
-```
-
-## How The App Works
-
-```text
-Browser user
-    |
-    v
-React frontend on http://localhost:5173
-    |
-    v
-Axios sends HTTP requests
-    |
-    v
-Flask backend on http://localhost:5001
-    |
-    v
-SQLite database file: Server/books.db
-```
-
-Example:
-
-1. User clicks **Create** in the React app.
-2. React sends a `POST /create` request to Flask.
-3. Flask inserts the book into SQLite.
-4. Flask returns JSON.
-5. React navigates back to the book list.
+---
 
 ## Prerequisites
 
-Install these first:
+Install these before you begin:
 
-- Python 3.8 or newer
-- Node.js 16 or newer
-- pip
-- npm
-- Git Bash or WSL on Windows if you want to run `.sh` scripts
+| Tool | Minimum version | Purpose |
+|---|---|---|
+| Python | 3.10+ | Backend runtime |
+| Node.js | 18+ | Frontend runtime |
+| Docker | latest | Run SQL Server |
+| Docker Compose | v2+ | Orchestrate all services |
+| Microsoft ODBC Driver 17 | 17.x | Python ↔ SQL Server |
 
-SQLite does not need a separate server installation because Python includes SQLite support.
+---
 
-Optional monitoring tools:
+## Quick start (Docker Compose — recommended)
 
-- **Wireshark** for watching HTTP traffic on Windows
-- **tcpdump** for watching HTTP traffic on Linux
-- **DB Browser for SQLite** for opening and checking `books.db`
+This is the simplest way to run the full stack including SQL Server.
 
-## Backend Setup On Windows
+```bash
+git clone https://github.com/<your-username>/<your-repo>.git
+cd <your-repo>
+docker compose up --build
+```
 
-Open PowerShell from the project root.
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:5001 |
+| SQL Server | localhost:1433 |
 
-```powershell
+The backend calls `init_db()` on startup — tables are created automatically the first time.
+
+Other useful commands:
+
+```bash
+docker compose up -d          # run in background
+docker compose down           # stop everything
+docker compose up --build     # rebuild after code changes
+docker compose logs -f        # stream all logs
+docker compose logs backend   # stream backend logs only
+```
+
+---
+
+## Manual local setup (without Docker)
+
+Use this if you want to run Flask and React directly on your machine (SQL Server still needs to run somewhere — see below).
+
+### 1. Run SQL Server locally
+
+The easiest way is Docker:
+
+```bash
+docker run -d \
+  --name mssql-container \
+  -e ACCEPT_EULA=Y \
+  -e SA_PASSWORD=YourStrong@Passw0rd \
+  -p 1433:1433 \
+  mcr.microsoft.com/mssql/server:2019-latest
+```
+
+Wait ~15 seconds for SQL Server to be ready, then create the database:
+
+```bash
+docker exec -it mssql-container \
+  /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' \
+  -Q "CREATE DATABASE books_db"
+```
+
+Tables are created automatically when Flask starts for the first time.
+
+### 2. Install the ODBC Driver 17
+
+**Ubuntu / Debian:**
+
+```bash
+sudo bash Server/install_odbc.sh
+```
+
+Or manually:
+
+```bash
+curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] \
+  https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
+  | sudo tee /etc/apt/sources.list.d/mssql-release.list
+
+sudo apt-get update
+sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
+```
+
+**Windows:**
+
+Download and install from [Microsoft's ODBC Driver page](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server).
+
+**macOS:**
+
+```bash
+brew tap microsoft/mssql-release https://github.com/microsoft/homebrew-mssql-release
+brew install msodbcsql17 mssql-tools
+```
+
+### 3. Configure the backend
+
+Create `Server/.env` (never commit this file):
+
+```env
+MSSQL_SERVER=localhost
+MSSQL_DATABASE=books_db
+MSSQL_USERNAME=sa
+MSSQL_PASSWORD=YourStrong@Passw0rd
+MSSQL_DRIVER=ODBC Driver 17 for SQL Server
+MSSQL_TRUST_CERT=yes
+JWT_SECRET_KEY=change-me-to-something-random
+```
+
+### 4. Start the backend
+
+```bash
 cd Server
+
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+source venv/bin/activate        # Linux / macOS
+# OR
+.\venv\Scripts\Activate.ps1     # Windows PowerShell
+
 pip install -r requirements.txt
 python app.py
 ```
 
-The backend starts at:
-
-```text
-http://localhost:5001
-```
+Backend starts at `http://localhost:5001`.
 
 Health check:
 
-```powershell
+```bash
 curl http://localhost:5001/health
+# → {"status":"healthy"}
 ```
 
-Expected response:
+### 5. Start the frontend (new terminal)
+
+```bash
+cd Client
+npm install
+npm run dev
+```
+
+Frontend starts at `http://localhost:5173`.
+
+---
+
+## Project structure
+
+```
+.
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml              # GitHub Actions — uses real MSSQL container
+├── Client/                        # React + Vite frontend
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── Books.jsx
+│   │   ├── CreateBook.jsx
+│   │   ├── UpdateBook.jsx
+│   │   ├── Login.jsx
+│   │   ├── Signup.jsx
+│   │   └── Nav.jsx
+│   ├── tests/                     # Playwright E2E tests
+│   ├── global-setup.js            # Playwright global setup (login + token)
+│   ├── playwright.config.js
+│   ├── Dockerfile
+│   └── package.json
+├── Server/                        # Flask backend
+│   ├── app.py                     # Main application (MSSQL via pyodbc)
+│   ├── requirements.txt
+│   ├── .env                       # Local secrets — do NOT commit
+│   ├── setup_database.sql         # Run manually inside SQL Server container
+│   ├── install_odbc.sh            # ODBC driver installer for Ubuntu
+│   ├── Dockerfile
+│   └── tests/
+│       ├── pytest/                # Pytest suite
+│       │   ├── conftest.py
+│       │   └── test_books_api.py
+│       └── postman_newman/        # Newman / Postman tests
+├── docker-compose.yml             # Runs MSSQL + backend + frontend
+└── README.md
+```
+
+---
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MSSQL_SERVER` | `localhost` | SQL Server host (use `mssql-container,1433` in Docker) |
+| `MSSQL_DATABASE` | `books_db` | Database name |
+| `MSSQL_USERNAME` | `sa` | SQL Server login |
+| `MSSQL_PASSWORD` | `YourStrong@Passw0rd` | SQL Server password |
+| `MSSQL_DRIVER` | `ODBC Driver 17 for SQL Server` | ODBC driver name |
+| `MSSQL_TRUST_CERT` | `yes` | Trust self-signed cert (dev only) |
+| `JWT_SECRET_KEY` | `dev-secret-key-change-me` | JWT signing key — **change in production** |
+
+---
+
+## API reference
+
+All endpoints on `http://localhost:5001`.
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | No | Health check |
+| `POST` | `/signup` | No | Register a new user |
+| `POST` | `/login` | No | Login — returns JWT |
+| `GET` | `/` | No | List all books |
+| `POST` | `/create` | JWT | Add a book |
+| `PUT` | `/update/<id>` | JWT | Update a book |
+| `DELETE` | `/delete/<id>` | JWT | Delete a book |
+
+### Signup
+
+```http
+POST /signup
+Content-Type: application/json
+
+{"username": "alice", "password": "Secret@1"}
+```
+
+### Login
+
+```http
+POST /login
+Content-Type: application/json
+
+{"username": "alice", "password": "Secret@1"}
+```
+
+Returns:
 
 ```json
-{
-  "status": "healthy"
-}
+{"access_token": "<jwt>"}
 ```
 
-If PowerShell blocks virtual environment activation, run:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-Then activate again:
-
-```powershell
-.\venv\Scripts\Activate.ps1
-```
-
-## Backend Setup On Linux
-
-Open a terminal from the project root.
-
-```bash
-cd Server
-python3 -m venv venv
-source venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-python app.py
-```
-
-The backend starts at:
-
-```text
-http://localhost:5001
-```
-
-Health check:
-
-```bash
-curl http://localhost:5001/health
-```
-
-## Frontend Setup On Windows
-
-Open another PowerShell terminal from the project root.
-
-```powershell
-cd Client
-npm install
-npm run dev
-```
-
-The frontend starts at:
-
-```text
-http://localhost:5173
-```
-
-Open this URL in the browser:
-
-```text
-http://localhost:5173
-```
-
-## Frontend Setup On Linux
-
-Open another terminal from the project root.
-
-```bash
-cd Client
-npm install
-npm run dev
-```
-
-The frontend starts at:
-
-```text
-http://localhost:5173
-```
-
-Open this URL in the browser:
-
-```text
-http://localhost:5173
-```
-
-## Running The Full App
-
-You need two terminals.
-
-Terminal 1:
-
-```bash
-cd Server
-python app.py
-```
-
-Terminal 2:
-
-```bash
-cd Client
-npm run dev
-```
-
-Then open:
-
-```text
-http://localhost:5173
-```
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/` | Retrieve all books |
-| `POST` | `/create` | Create a new book |
-| `PUT` | `/update/<id>` | Update a book by ID |
-| `DELETE` | `/delete/<id>` | Delete a book by ID |
-| `GET` | `/health` | Check backend health |
-
-## Example API Requests
-
-### Get All Books
+### Create a book
 
 ```http
-GET http://localhost:5001/
-```
-
-### Create A Book
-
-```http
-POST http://localhost:5001/create
+POST /create
+Authorization: Bearer <jwt>
 Content-Type: application/json
 
 {
   "publisher": "O'Reilly",
   "name": "Learning Flask",
   "date": "2024-10-11",
-  "cost": 399.99
+  "cost": 49.99
 }
 ```
 
-### Update A Book
+### Update a book
 
 ```http
-PUT http://localhost:5001/update/1
+PUT /update/1
+Authorization: Bearer <jwt>
 Content-Type: application/json
 
-{
-  "publisher": "Updated Publisher",
-  "name": "Updated Book Name",
-  "date": "2024-12-01",
-  "cost": 499.99
-}
+{"publisher": "Packt", "name": "Updated", "date": "2025-01-01", "cost": 39.99}
 ```
 
-### Delete A Book
+### Delete a book
 
 ```http
-DELETE http://localhost:5001/delete/1
+DELETE /delete/1
+Authorization: Bearer <jwt>
 ```
 
-Note: The app uses lowercase `cost` in the React frontend, Flask API JSON, and SQLite schema.
+---
 
-## Inspecting The SQLite Database With DB Browser
+## Database schema
 
-Use **DB Browser for SQLite** when you want to see the database records directly.
-
-### Install DB Browser
-
-Windows:
-
-1. Download DB Browser for SQLite from `https://sqlitebrowser.org/`.
-2. Install and open it.
-
-Linux:
+The app creates tables automatically on startup via `init_db()`.
+To set up manually (or add sample data) run:
 
 ```bash
-sudo apt update
-sudo apt install sqlitebrowser
+docker exec -it mssql-container \
+  /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'YourStrong@Passw0rd' \
+  -i /path/to/Server/setup_database.sql
 ```
 
-### Open The App Database
+Tables:
 
-1. Run the Flask backend once so `books.db` is created.
-2. Open DB Browser for SQLite.
-3. Click **Open Database**.
-4. Select:
+```sql
+-- books
+CREATE TABLE book (
+    id        INT IDENTITY(1,1) PRIMARY KEY,
+    publisher NVARCHAR(255) NOT NULL,
+    name      NVARCHAR(255) NOT NULL,
+    date      NVARCHAR(20)  NOT NULL,
+    cost      FLOAT         NOT NULL
+);
 
-```text
-Server/books.db
+-- users
+CREATE TABLE users (
+    id            INT IDENTITY(1,1) PRIMARY KEY,
+    username      NVARCHAR(150) NOT NULL UNIQUE,
+    password_hash NVARCHAR(256) NOT NULL
+);
 ```
 
-5. Go to the **Browse Data** tab.
-6. Select the `book` table.
+---
 
-You can now monitor records while using the React app.
+## Running Pytest (backend tests)
 
-### What To Check
-
-After creating a book in the UI, check that a new row appears in the `book` table.
-
-After updating a book, check that the row values changed.
-
-After deleting a book, check that the row is removed.
-
-Important: If the Flask server is running and DB Browser also has the database open, avoid manually editing rows at the same time unless you understand SQLite locking.
-
-## Monitoring App Traffic
-
-Use **Wireshark on Windows** or **tcpdump on Linux** to see traffic between React and Flask.
-
-The important backend port is:
-
-```text
-5001
-```
-
-The frontend port is:
-
-```text
-5173
-```
-
-Most API traffic to inspect is on port `5001`.
-
-### Install Wireshark On Windows
-
-1. Download Wireshark from `https://www.wireshark.org/`.
-2. Install it.
-3. During installation, install **Npcap**.
-4. Enable loopback capture support if the installer asks.
-
-### Capture Traffic On Windows
-
-1. Start Flask backend on port `5001`.
-2. Start React frontend on port `5173`.
-3. Open Wireshark.
-4. Select the loopback adapter. It may be named:
-
-```text
-Adapter for loopback traffic capture
-```
-
-or something similar from Npcap.
-
-5. Start capture.
-6. Use this display filter:
-
-```text
-
-http and tcp.port == 5001 and (http.request.method or http.response.code or json)
-
-```
-
-7. In the React app, create, update, delete, or refresh books.
-8. Watch requests going to the Flask API.
-
-Useful filters:
-
-```text
-tcp.port == 5001
-http
-http.request
-http.response
-```
-
-### Install tcpdump On Linux
+Tests run against a real MSSQL instance. Make sure SQL Server is running and the `.env` file is configured.
 
 ```bash
-sudo apt update
-sudo apt install tcpdump
-```
-
-### Capture Traffic On Linux With tcpdump
-
-1. Start Flask backend on port `5001`.
-2. Start React frontend on port `5173`.
-3. In another terminal, capture loopback traffic on port `5001`:
-
-```bash
-sudo tcpdump -i lo port 5001
-```
-
-4. Use the React app in the browser: view, create, update, or delete books.
-5. Watch the terminal output for traffic between the frontend and backend.
-
-For more readable output with packet contents, use:
-
-```bash
-sudo tcpdump -i lo -A port 5001
-```
-
-To capture both frontend and backend development ports:
-
-```bash
-sudo tcpdump -i lo 'port 5001 or port 5173'
-```
-
-To save traffic to a file for later analysis:
-
-```bash
-sudo tcpdump -i lo port 5001 -w flask-traffic.pcap
-```
-
-Then you can open `flask-traffic.pcap` later in Wireshark if needed.
-
-Useful tcpdump options:
-
-```text
--i lo       Capture on Linux loopback interface
-port 5001   Capture Flask backend traffic
--A          Print packet contents as ASCII
--w file     Save capture to a file
-```
-
-### What You Should See
-
-When viewing books:
-
-```text
-GET /
-```
-
-When creating a book:
-
-```text
-POST /create
-```
-
-When updating a book:
-
-```text
-PUT /update/<id>
-```
-
-When deleting a book:
-
-```text
-DELETE /delete/<id>
-```
-
-If the traffic tool does not show clear HTTP details, it may still show TCP packets. Localhost traffic can behave differently depending on OS, browser, and adapter selection.
-
-## Running Pytest Backend Tests
-
-Pytest tests are in:
-
-```text
-Server/tests/pytest/
-```
-
-### Windows PowerShell
-
-From the project root:
-
-```powershell
 cd Server
-.\venv\Scripts\Activate.ps1
-python -m pytest tests/pytest/ -v
+source venv/bin/activate        # or .\venv\Scripts\Activate.ps1 on Windows
+
+python -m pytest tests/pytest -v
+
+# With JSON report
+python -m pytest tests/pytest -v \
+  --json-report --json-report-file=tests/pytest/pytest-report.json
 ```
 
-To generate the JSON report:
+---
 
-```powershell
-python -m pytest tests/pytest/ -v --json-report --json-report-file=tests/pytest/pytest-report.json
-```
+## Running Playwright (frontend E2E tests)
 
-### Linux
+The Flask backend must be running first.
 
-From the project root:
+**Terminal 1 — start backend:**
 
 ```bash
 cd Server
 source venv/bin/activate
-python -m pytest tests/pytest/ -v
+python app.py
 ```
 
-Or use the helper script:
-
-```bash
-cd Server
-bash run-pytest.sh
-```
-
-Pytest report output:
-
-```text
-Server/tests/pytest/pytest-report.json
-```
-
-Note: Some tests may fail if the current Flask implementation does not match the stronger validation behavior expected by the tests.
-
-## Running Playwright Frontend Tests
-
-Playwright tests are in:
-
-```text
-Client/tests/
-```
-
-The Playwright config starts the React dev server automatically, but the Flask backend should be running separately because the UI calls the backend API.
-
-### First-Time Playwright Setup
-
-Windows or Linux:
+**Terminal 2 — run tests:**
 
 ```bash
 cd Client
 npm install
-npx playwright install
-```
-
-### Run Playwright Tests On Windows
-
-Terminal 1:
-
-```powershell
-cd Server
-.\venv\Scripts\Activate.ps1
-python app.py
-```
-
-Terminal 2:
-
-```powershell
-cd Client
-npm test
-```
-
-Alternative:
-
-```powershell
+npx playwright install          # first time only
 npx playwright test
 ```
 
-### Run Playwright Tests On Linux
-
-Terminal 1:
+Useful commands:
 
 ```bash
-cd Server
-source venv/bin/activate
-python app.py
+npx playwright test --headed    # show browser
+npx playwright test --debug     # step-by-step
+npx playwright show-report      # open HTML report
 ```
 
-Terminal 2:
+---
 
-```bash
-cd Client
-npm test
-```
-
-Alternative:
-
-```bash
-npx playwright test
-```
-
-### Useful Playwright Commands
-
-```bash
-npm run test
-npm run test:headed
-npm run test:debug
-npm run test:ui
-npm run test:report
-```
-
-Playwright HTML report:
-
-```text
-Client/playwright-report/index.html
-```
-
-## Running Newman API Tests
-
-Newman tests are in:
-
-```text
-Server/tests/postman_newman/
-```
-
-Install dependencies:
+## Running Newman (API tests)
 
 ```bash
 cd Server/tests/postman_newman
 npm install
-```
-
-Run tests:
-
-```bash
 npm test
 ```
 
-Run enhanced report:
+Flask must be running on port `5001`.
 
-```bash
-npm run test:enhanced
-```
+---
 
-Important: Check `postman_environment.json` before running Newman. If it points to `http://127.0.0.1:5000`, update or override it to match the current Flask backend port:
+## GitHub Actions CI/CD
 
-```text
-http://127.0.0.1:5001
-```
+The pipeline at `.github/workflows/ci-cd.yml` runs on every push/PR to `main`.
 
-## Test Reports
-
-| Tool | Report Location |
+| Job | What it does |
 |---|---|
-| Pytest | `Server/tests/pytest/pytest-report.json` |
-| Newman | `Server/tests/postman_newman/newman-result.json` |
-| Newman HTML | `Server/tests/postman_newman/newman-standard-report.html` or `newman-enhanced-report.html` |
-| Playwright | `Client/playwright-report/index.html` |
-| Unified Report | `Server/tests/unified_report/comprehensive-test-report.html` |
+| `backend-tests` | Spins up MSSQL container, installs ODBC 17, creates DB + tables, seeds test user, runs Pytest |
+| `frontend-build` | Runs `npm ci` + `npm run build`, uploads dist artifact |
+| `playwright-tests` | Spins up MSSQL container, starts Flask, serves built frontend, runs Playwright |
+| `package-artifacts` | Bundles release artifacts (main branch pushes only) |
 
-Generate unified report after Pytest and Newman have run:
+**No GitHub secrets required** for CI — MSSQL credentials are baked into the workflow with the standard developer password. For production deployments, add secrets via **Settings → Secrets and variables → Actions**.
 
-```bash
-cd Server
-bash generate-unified-report.sh
-```
+| Secret name | Used for |
+|---|---|
+| `JWT_SECRET_KEY` | Override the default JWT key in production |
+| `MSSQL_PASSWORD` | Override the SA password if you change it |
 
-## Running with Docker (Recommended for Deployment)
-
-Docker allows you to containerize the entire application and run it consistently across different machines.
-
-### Quick Start with Docker Compose
-
-Prerequisites:
-- Docker and Docker Compose installed
-
-From the project root:
-
-```bash
-docker compose up
-```
-
-The application will be available at:
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:5001`
-
-**Useful Docker Compose commands:**
-
-```bash
-docker compose up -d          # Run in background
-docker compose down           # Stop services
-docker compose logs           # View logs
-docker compose up --build     # Rebuild images (after code changes)
-```
-
-### Building and Pushing to Docker Hub
-
-To share your images on Docker Hub:
-
-1. **Login to Docker Hub:**
-   ```bash
-   docker login
-   ```
-
-2. **Build images with Docker Hub naming:**
-   ```bash
-   docker build -t your-username/book-management-backend:1.0 ./Server
-   docker build -t your-username/book-management-frontend:1.0 ./Client
-   ```
-
-3. **Push to Docker Hub:**
-   ```bash
-   docker push your-username/book-management-backend:1.0
-   docker push your-username/book-management-frontend:1.0
-   ```
-
-### Running from Docker Hub Images
-
-Others can run your application by updating the `docker-compose.yml` to use your pushed images:
-
-```yaml
-services:
-  backend:
-    image: your-username/book-management-backend:1.0
-  frontend:
-    image: your-username/book-management-frontend:1.0
-```
-
-Then run:
-```bash
-docker compose up
-```
-
-For comprehensive Docker setup instructions, environment variables, troubleshooting, and production deployment guidelines, see [DOCKER_INSTRUCTIONS.md](DOCKER_INSTRUCTIONS.md).
-
-## Technologies Used
-
-### Backend
-
-- **Flask**: Python web framework
-- **Flask-CORS**: Allows frontend and backend to communicate across ports
-- **SQLite**: File-based database
-- **Pytest**: Backend test framework
-
-### Frontend
-
-- **React**: UI library
-- **Vite**: React development/build tool
-- **Axios**: HTTP client for API calls
-- **Bootstrap**: Styling framework
-- **Playwright**: Browser automation testing
-
-### API Testing And Monitoring
-
-- **Postman/Newman**: API test automation
-- **Wireshark**: Network traffic inspection on Windows
-- **tcpdump**: Network traffic inspection on Linux
-- **DB Browser for SQLite**: Database inspection
-
-### Containerization
-
-- **Docker**: Container platform for building and running the app
-- **Docker Compose**: Multi-container orchestration
+---
 
 ## Troubleshooting
 
-### Backend Will Not Start
+### `Can't open lib 'ODBC Driver 17 for SQL Server': file not found`
 
-Make sure the virtual environment is activated and dependencies are installed.
+The ODBC driver is not installed on this machine.
 
-Windows:
-
-```powershell
-cd Server
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python app.py
-```
-
-Linux:
+Ubuntu:
 
 ```bash
-cd Server
-source venv/bin/activate
-pip install -r requirements.txt
-python app.py
+sudo bash Server/install_odbc.sh
 ```
 
-### Frontend Cannot Connect To Backend
+Verify:
 
-Check:
+```bash
+odbcinst -q -d
+# should list: [ODBC Driver 17 for SQL Server]
+```
 
-- Flask is running on `http://localhost:5001`
-- React is running on `http://localhost:5173`
-- CORS is enabled in Flask
-- Browser console does not show network errors
+### `Login timeout expired` / `TCP Provider: Error code 0x2746`
 
-### Port Already In Use
+SQL Server is not running or not reachable on port 1433. Start it with Docker:
 
-Windows:
+```bash
+docker start mssql-container
+# or
+docker compose up mssql
+```
 
-```powershell
+### `Login failed for user 'sa'`
+
+Either the password is wrong or the SA account is disabled. Check your `.env` file. If using Docker, make sure `SA_PASSWORD` matches.
+
+### `Login returns 401 with correct credentials`
+
+The user doesn't exist. Register first:
+
+```bash
+curl -X POST http://localhost:5001/signup \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testuser","password":"Test@1234"}'
+```
+
+### `Address already in use` on port 5001 or 5173
+
+```bash
+# Linux / macOS
+lsof -ti :5001 | xargs kill -9
+lsof -ti :5173 | xargs kill -9
+
+# Windows PowerShell
 netstat -ano | findstr :5001
-netstat -ano | findstr :5173
+Stop-Process -Id <PID> -Force
 ```
 
-Linux:
+### Port 1433 already in use
 
-```bash
-lsof -i :5001
-lsof -i :5173
-```
+Another SQL Server instance is running. Stop it or change the host port mapping in `docker-compose.yml` to e.g. `"1434:1433"` and update `MSSQL_SERVER` accordingly.
 
-### Recreate Python Virtual Environment
+---
 
-Windows PowerShell:
+## Technologies
 
-```powershell
-cd Server
-Remove-Item -Recurse -Force venv
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
+- [Flask](https://flask.palletsprojects.com/)
+- [pyodbc](https://github.com/mkleehammer/pyodbc)
+- [Flask-JWT-Extended](https://flask-jwt-extended.readthedocs.io/)
+- [React](https://react.dev/) + [Vite](https://vitejs.dev/)
+- [Playwright](https://playwright.dev/)
+- [Pytest](https://pytest.org/)
+- [Newman](https://learning.postman.com/docs/collections/using-newman-cli/)
+- [SQL Server 2019](https://www.microsoft.com/en-us/sql-server/)
+- [Docker](https://www.docker.com/) + [Docker Compose](https://docs.docker.com/compose/)
 
-Linux:
-
-```bash
-cd Server
-rm -rf venv
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-### Reinstall Frontend Dependencies
-
-```bash
-cd Client
-npm install
-```
-
-## Quick Explanation For Presentation
-
-This project is a full-stack CRUD Book Management System. The React frontend runs on port `5173` and provides the user interface. It uses Axios to send HTTP requests to the Flask backend on port `5001`. Flask performs create, read, update, and delete operations on a SQLite database file called `books.db`. The project also includes Pytest tests for backend APIs, Playwright tests for frontend flows, Newman tests for API scenarios, Wireshark steps for Windows traffic monitoring, tcpdump steps for Linux traffic monitoring, and DB Browser steps for inspecting database records.
+---
 
 ## License
 
-This project is for educational purposes.
+Educational use only.

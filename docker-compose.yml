@@ -1,7 +1,33 @@
 version: '3.8'
 
 services:
-  # Backend Flask API Service
+
+  # ── Microsoft SQL Server ──────────────────────────────────────────────────
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: mssql-container
+    ports:
+      - "1433:1433"
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "${MSSQL_PASSWORD:-YourStrong@Passw0rd}"
+      MSSQL_PID: Developer
+    volumes:
+      - mssql_data:/var/opt/mssql
+    networks:
+      - book-management-network
+    restart: unless-stopped
+    healthcheck:
+      test: >
+        /opt/mssql-tools/bin/sqlcmd
+        -S localhost -U sa -P "${MSSQL_PASSWORD:-YourStrong@Passw0rd}"
+        -Q "SELECT 1"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Flask Backend ─────────────────────────────────────────────────────────
   backend:
     build:
       context: ./Server
@@ -10,24 +36,30 @@ services:
     ports:
       - "5001:5001"
     environment:
-      - FLASK_APP=app.py
-      - FLASK_ENV=production
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-in-production}
-      - BOOKS_DB_PATH=/app/data/books.db
-    volumes:
-      # Persist database data
-      - backend_data:/app/data
+      FLASK_APP: app.py
+      FLASK_ENV: production
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-your-secret-key-change-in-production}"
+      MSSQL_SERVER: "mssql-container,1433"
+      MSSQL_DATABASE: "${MSSQL_DATABASE:-books_db}"
+      MSSQL_USERNAME: "${MSSQL_USERNAME:-sa}"
+      MSSQL_PASSWORD: "${MSSQL_PASSWORD:-YourStrong@Passw0rd}"
+      MSSQL_DRIVER: "ODBC Driver 17 for SQL Server"
+      MSSQL_TRUST_CERT: "yes"
+    depends_on:
+      mssql:
+        condition: service_healthy
     networks:
       - book-management-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 5s
+      start_period: 10s
 
-  # Frontend React Service
+  # ── React Frontend ────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./Client
@@ -36,10 +68,10 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - NODE_ENV=production
-      - VITE_BACKEND_URL=http://localhost:5001
+      NODE_ENV: production
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - book-management-network
     restart: unless-stopped
@@ -55,5 +87,5 @@ networks:
     driver: bridge
 
 volumes:
-  backend_data:
+  mssql_data:
     driver: local

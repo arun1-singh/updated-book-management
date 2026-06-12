@@ -1,26 +1,25 @@
-# Core Flask dependencies
+# Core Flask
 Flask==3.0.0
 flask-cors==4.0.0
+Werkzeug>=3.0.0
 
-# API Documentation
-flasgger==0.9.7.1
+# JWT
+flask-jwt-extended>=4.6.0
 
-# Database dependencies
-psycopg2-binary==2.9.10
+# Environment variables
+python-dotenv>=1.0.0
 
-# Testing dependencies
+# SQL Server driver
+pyodbc>=5.0.0
+
+# Testing
 pytest==7.4.3
 pytest-json-report==1.5.0
 
-# Test reporting and analysis dependencies
+# Report helpers
 numpy==2.1.3
 pandas==2.2.3
 Jinja2==3.1.2
 
-# JWT dependencies
-flask-jwt-extended>=4.6.0
-
-dotenv
-pyodbc
-pyodbc
-python-dotenv
+# API docs (optional)
+flasgger==0.9.7.1
