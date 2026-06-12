@@ -60,10 +60,9 @@ jobs:
       # ── Install ODBC Driver 17 ───────────────────────────────────────
       - name: Install Microsoft ODBC Driver 17 for SQL Server
         run: |
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
-            | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] \
-            https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o /tmp/microsoft.asc
+          sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg /tmp/microsoft.asc
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
             | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update -q
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
@@ -239,10 +238,9 @@ jobs:
 
       - name: Install Microsoft ODBC Driver 17 for SQL Server
         run: |
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
-            | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] \
-            https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc -o /tmp/microsoft.asc
+          sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg /tmp/microsoft.asc
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" \
             | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update -q
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
