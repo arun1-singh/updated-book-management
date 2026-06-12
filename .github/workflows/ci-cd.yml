@@ -111,7 +111,7 @@ jobs:
           name: react-dist
           path: Client/dist
 
-  playwright-tests:
+    playwright-tests:
     runs-on: ubuntu-latest
     needs: [backend-tests, frontend-build]
     steps:
@@ -143,22 +143,47 @@ jobs:
           conn.execute('CREATE TABLE IF NOT EXISTS user (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL)')
           conn.execute('INSERT OR IGNORE INTO book (publisher, name, date, cost) VALUES (?, ?, ?, ?)', ('CI Pub', 'CI Book', '2026-06-01', 99.99))
           from werkzeug.security import generate_password_hash
-          conn.execute('INSERT OR IGNORE INTO user (username, password) VALUES (?, ?)', ('testuser', generate_password_hash('Test@1234')))
+          hashed = generate_password_hash('Test@1234')
+          conn.execute('INSERT OR IGNORE INTO user (username, password) VALUES (?, ?)', ('testuser', hashed))
           conn.commit()
+          conn.close()
+          print('Database initialized with test user and book')
+          "
+
+      - name: Verify database and user
+        working-directory: Server
+        run: |
+          python -c "
+          import sqlite3, os
+          db_path = os.getenv('BOOKS_DB_PATH', 'data/books.db')
+          conn = sqlite3.connect(db_path)
+          cursor = conn.cursor()
+          cursor.execute('SELECT * FROM user')
+          user = cursor.fetchone()
+          print(f'User in DB: {user}')
+          cursor.execute('SELECT * FROM book')
+          book = cursor.fetchone()
+          print(f'Book in DB: {book}')
           conn.close()
           "
 
-      - name: Start Flask backend (SQLite)
+      - name: Start Flask backend (SQLite) with debug logging
         working-directory: Server
         env:
           BOOKS_DB_PATH: data/books.db
           JWT_SECRET_KEY: "test-secret-key-32-chars-long-for-ci"
           FLASK_APP: app.py
+          FLASK_ENV: development
+          FLASK_DEBUG: 1
         run: flask run --host 127.0.0.1 --port 5001 &
 
       - name: Wait for backend
         run: |
           for i in {1..30}; do curl -fsS http://127.0.0.1:5001/health && exit 0; sleep 2; done; exit 1
+
+      - name: Test login manually (debug)
+        run: |
+          curl -X POST http://127.0.0.1:5001/login -H "Content-Type: application/json" -d '{"username":"testuser","password":"Test@1234"}' || echo "Login failed, see backend logs"
 
       - uses: actions/download-artifact@v4
         with:
@@ -181,7 +206,7 @@ jobs:
         run: |
           for i in {1..30}; do curl -fsS http://127.0.0.1:5173 && exit 0; sleep 2; done; exit 1
 
-      - name: Write correct global-setup.js (API login)
+      - name: Write global-setup.js (with debug prints)
         working-directory: Client
         run: |
           cat > global-setup.js << 'EOF'
@@ -192,22 +217,22 @@ jobs:
             const page = await browser.newPage();
 
             const backendUrl = 'http://localhost:5001';
-            try {
-              const health = await page.request.get(`${backendUrl}/health`);
-              if (!health.ok()) throw new Error(`Backend health check failed: ${health.status()}`);
-              console.log('✅ Backend is healthy');
-            } catch (err) {
-              console.error('❌ Backend not reachable:', err);
-              throw err;
-            }
+            console.log('Checking backend health...');
+            const health = await page.request.get(`${backendUrl}/health`);
+            if (!health.ok()) throw new Error(`Backend health check failed: ${health.status()}`);
+            console.log('Backend is healthy');
 
+            console.log('Attempting login...');
             const loginRes = await page.request.post(`${backendUrl}/login`, {
               data: { username: 'testuser', password: 'Test@1234' }
             });
             if (!loginRes.ok()) {
-              throw new Error(`Login failed: ${loginRes.status()} ${await loginRes.text()}`);
+              const text = await loginRes.text();
+              console.error('Login response body:', text);
+              throw new Error(`Login failed: ${loginRes.status()} ${text}`);
             }
             const { access_token } = await loginRes.json();
+            console.log('Login successful, token obtained');
 
             await page.addInitScript((token) => {
               window.localStorage.setItem('access_token', token);
@@ -215,13 +240,13 @@ jobs:
 
             await page.context().storageState({ path: 'auth-state.json' });
             await browser.close();
-            console.log('✅ Global setup complete – token saved');
+            console.log('Global setup complete');
           }
 
           export default globalSetup;
           EOF
 
-      - name: Write correct playwright.config.js (no webServer)
+      - name: Write playwright.config.js
         working-directory: Client
         run: |
           cat > playwright.config.js << 'EOF'
