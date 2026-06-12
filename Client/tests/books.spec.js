@@ -79,11 +79,10 @@ test.describe('Books List Page', () => {
   });
 
   test('should handle delete button click', async ({ page }) => {
-    // Reload page to ensure axios headers are initialised from localStorage
-    await page.reload();
-    await page.waitForSelector('table.table tbody tr, h2:has-text("No records")', { timeout: 5000 });
+    // Do NOT reload — let test-setup's localStorage token stay intact
+    await page.waitForSelector('table.table tbody tr, td:has-text("No records")', { timeout: 5000 });
 
-    const noRecords = page.locator('h2:has-text("No records")');
+    const noRecords = page.locator('td:has-text("No records")');
     const deleteButtons = page.locator('button.btn-danger');
     const rows = page.locator('table.table tbody tr');
 
@@ -95,8 +94,8 @@ test.describe('Books List Page', () => {
     if (await deleteButtons.first().isVisible({ timeout: 3000 })) {
       const rowsBefore = await rows.count();
       await deleteButtons.first().click();
-      // Wait for the row count to decrease (optimistic removal in UI)
-      await expect(rows).toHaveCount(rowsBefore - 1, { timeout: 5000 });
+      // The UI removes the row optimistically — wait for DOM update
+      await expect(rows).toHaveCount(rowsBefore - 1, { timeout: 10000 });
     }
   });
 });

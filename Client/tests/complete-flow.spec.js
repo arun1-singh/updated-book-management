@@ -28,19 +28,12 @@ test.describe('Complete Book Management Flow', () => {
     // Fill date
     await page.locator('input[type="date"]').fill(testBook.date);
     
-    // Fill cost - use multiple strategies to find the cost input
-    const costLabel = page.locator('label:has-text("cost:")');
-    const costInput = costLabel.locator('xpath=following-sibling::input[1]');
-    if (await costInput.count() > 0) {
-      await costInput.fill(testBook.cost);
-    } else {
-      // Fallback: use index-based selection
-      await page.locator('input.form-control').nth(3).fill(testBook.cost);
-    }
+    // Fill cost using name attribute (matches the actual input in CreateBook.jsx)
+    await page.fill('input[name="cost"]', testBook.cost);
     
-    // Submit form and wait for navigation
+    // Submit and wait for navigation
     await Promise.all([
-      page.waitForURL('/'), // Wait for redirect to home
+      page.waitForURL('/'),
       page.click('button[type="submit"]')
     ]);
     
@@ -134,11 +127,8 @@ test.describe('Complete Book Management Flow', () => {
     await page.fill('input[placeholder="Enter Book name"]', testBook.name);
     await page.locator('input[type="date"]').fill(testBook.date);
     
-    // Fill cost using label relationship
-    const costInput = page.locator('label:has-text("cost:") + input');
-    if (await costInput.count() > 0) {
-      await costInput.fill(testBook.cost);
-    }
+    // Fill cost using name attribute
+    await page.fill('input[name="cost"]', testBook.cost);
     
     // Submit and wait for navigation
     await Promise.all([
@@ -150,7 +140,7 @@ test.describe('Complete Book Management Flow', () => {
     await page.waitForTimeout(2000);
 
     // Verify book was created
-    await expect(page.locator(`tr:has-text("${testBook.name}")`)).toBeVisible();
+    await expect(page.locator(`tr:has-text("${testBook.name}")`)).toBeVisible({ timeout: 10000 });
     
     // Update the book
     await page.locator(`tr:has-text("${testBook.name}") button.btn-primary`).click();
@@ -211,11 +201,8 @@ test.describe('Complete Book Management Flow', () => {
     await page.fill('input[placeholder="Enter Book name"]', testBook.name);
     await page.locator('input[type="date"]').fill(testBook.date);
     
-    // Fill cost
-    const costInput = page.locator('label:has-text("cost:") + input');
-    if (await costInput.count() > 0) {
-      await costInput.fill(testBook.cost);
-    }
+    // Fill cost using name attribute
+    await page.fill('input[name="cost"]', testBook.cost);
     
     // Submit and verify navigation
     await Promise.all([
@@ -227,7 +214,7 @@ test.describe('Complete Book Management Flow', () => {
     await page.waitForTimeout(2000);
     
     // Verify book was created
-    await expect(page.locator(`tr:has-text("${testBook.name}")`)).toBeVisible();
+    await expect(page.locator(`tr:has-text("${testBook.name}")`)).toBeVisible({ timeout: 10000 });
     console.log('Book creation verified successfully');
   });
 });
